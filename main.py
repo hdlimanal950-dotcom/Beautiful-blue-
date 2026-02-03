@@ -120,7 +120,7 @@ LANG_META = {
         "label": "Français",
         "articles_file": cfg.ARTICLES_FR,
         "log_file": cfg.LOG_FR,
-        "sections": ["Introduction", "Notions Fondamentales", "Méthodes & Outils", "Conseils Pratiques", "Conclusion"],
+        "sections": ["Introduction", "Notions Fondamentales", "Methods & Tools", "Conseils Pratiques", "Conclusion"],
         "related_label": "Articles liés qui pourront vous intéresser",
         "conclusion_template": "En conclusion, le sujet de <strong>{keyword}</strong> est l'un des sujets les plus importants à maîtriser. Continuez à apprendre et à explorer — la réussite vient avec la persévérance.",
         "intro_prefix": "Dans cet article, nous allons explorer",
@@ -477,7 +477,7 @@ class SMTPSender:
                 self._conn.sendmail(cfg.SENDER_EMAIL, cfg.BLOGGER_EMAIL, msg.as_string())
                 logger.info("[SMTP] ✅ Sent: %s  (attempt %d)", subject, attempt)
                 return True
-            except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectionError, OSError) as e:
+            except (smtplib.SMTPServerDisconnected, ConnectionError, OSError) as e:
                 logger.warning("[SMTP] ⚠️  Connection lost: %s — reconnecting (attempt %d/%d)", e, attempt, cfg.SMTP_RETRIES)
                 self.close()
                 time.sleep(cfg.SMTP_RETRY_WAIT * attempt)  # exponential-ish back-off
