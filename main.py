@@ -56,7 +56,7 @@ class Config:
     SENDER_EMAIL:   str = os.getenv("SENDER_EMAIL",   "YOUR_GMAIL@gmail.com")
     SENDER_PASS:    str = os.getenv("SENDER_PASS",    "YOUR_APP_PASSWORD")
     SMTP_HOST:      str = os.getenv("SMTP_HOST",      "smtp.gmail.com")
-    SMTP_PORT:      int = int(os.getenv("SMTP_PORT",  "587"))
+    SMTP_PORT:      int = int(os.getenv("SMTP_PORT",  "465"))  # تغيير من 587 إلى 465
     BLOGGER_EMAIL:  str = os.getenv("BLOGGER_EMAIL",  "qttqtt994.mounir06@blogger.com")
 
     # --- Quota & Timing ---
@@ -207,7 +207,7 @@ SEED_ARTICLES = {
             "id": 3,
             "title": "Guide Complet de la Programmation Python",
             "keyword": "Programmation Python",
-            "body": "La programmation Python est largement considérée comme l'une des langues les plus accessibles et puissantes à apprendre. Créé dans les années 1990 Python a connu une explosion de popularité au cours de la dernière décennie dans tous les secteurs. La syntaxe propre et lisible de Python la rend parfaite comme première langage pour les débutants qui souhaitent se lancer. Python est utilisé massivement en intelligence artificielle apprentissage automatique science des données et développement web. Commencer est simple — téléchargez l'interpréteur officiel depuis python.org et commencez à expérimenter immédiatement. L'écosystème Python contient des milliers de bibliothèques gratuites qui étendent ses capacités dans presque tous les domaines. Commencer par des projets petits puis progressivement augmenter la complexité est la stratégie d'apprentissage la plus efficace. La communauté Python est exceptionnellement accueillante et vous trouverez un soutien complet et des ressources partout en ligne.",
+            "body": "La programmation Python est largement considérée comme l'une des langues les plus accessibles et puissantes à apprendre. Créé dans les années 1990 Python a connu une explosion de popularity au cours de la dernière décennie dans tous les secteurs. La syntaxe propre et lisible de Python la rend parfaite comme première langage pour les débutants qui souhaitent se lancer. Python est utilisé massivement en intelligence artificielle apprentissage automatique science des données et développement web. Commencer est simple — téléchargez l'interpréteur officiel depuis python.org et commencez à expérimenter immédiatement. L'écosystème Python contient des milliers de bibliothèques gratuites qui étendent ses capacités dans presque tous les domaines. Commencer par des projets petits puis progressivement augmenter la complexité est la stratégie d'apprentissage la plus efficace. La communauté Python est exceptionnellement accueillante et vous trouverez un soutien complet et des ressources partout en ligne.",
             "image_url": "https://picsum.photos/seed/fr3/800/400",
             "internal_links": ["https://yoursite.com/python-debut", "https://yoursite.com/frameworks-web"]
         },
@@ -434,26 +434,26 @@ class ArticleBuilder:
         return self.title, html
 
 # ============================================================
-# 📧 SMTP SENDER — Retry + TLS + connection reuse
+# 📧 SMTP SENDER — Retry + SSL + connection reuse
 # ============================================================
 
 class SMTPSender:
     """
     Sends one email with automatic retry on transient failures.
-    Uses TLS (STARTTLS). Reconnects only when needed.
+    Uses SSL (port 465) instead of TLS (port 587).
     """
     def __init__(self):
-        self._conn: smtplib.SMTP | None = None
+        self._conn: smtplib.SMTP_SSL | None = None
 
     # ── Connect (or reconnect) ──
     def _connect(self):
-        logger.info("[SMTP] Connecting %s:%d …", cfg.SMTP_HOST, cfg.SMTP_PORT)
-        self._conn = smtplib.SMTP(cfg.SMTP_HOST, cfg.SMTP_PORT, timeout=30)
+        logger.info("[SMTP] Connecting via SSL %s:%d …", cfg.SMTP_HOST, cfg.SMTP_PORT)
+        # استخدام SMTP_SSL بدلاً من SMTP للاتصال الآمن منذ البداية
+        self._conn = smtplib.SMTP_SSL(cfg.SMTP_HOST, cfg.SMTP_PORT, timeout=30)
         self._conn.ehlo()
-        self._conn.starttls()
-        self._conn.ehlo()
+        # لا نحتاج إلى starttls() لأن الاتصال مشفر بالفعل مع SMTP_SSL
         self._conn.login(cfg.SENDER_EMAIL, cfg.SENDER_PASS)
-        logger.info("[SMTP] ✅ Authenticated.")
+        logger.info("[SMTP] ✅ SSL authenticated.")
 
     # ── Close gracefully ──
     def close(self):
