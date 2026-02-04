@@ -106,14 +106,14 @@ SEED_ARTICLES = [
         "id": 1,
         "title": "Delicious Homemade Pizza Recipe",
         "keyword": "Pizza Recipe",
-        "body": "<h1>Delicious Homemade Pizza Recipe</h1><p>Learn how to make amazing homemade pizza with this easy recipe...</p>",
+        "body": "This is a sample article body with multiple sentences. Each sentence ends with a period. We will format this into proper paragraphs. The article continues with more content about cooking delicious pizza. It includes tips and tricks for perfect dough. Finally, we discuss baking techniques for the best results.",
         "image_url": "https://picsum.photos/seed/pizza/800/400"
     },
     {
         "id": 2,
         "title": "Perfect Chocolate Chip Cookies",
         "keyword": "Cookie Recipe",
-        "body": "<h1>Perfect Chocolate Chip Cookies</h1><p>The ultimate guide to baking soft and chewy chocolate chip cookies...</p>",
+        "body": "This article teaches you how to make perfect chocolate chip cookies. First, we discuss ingredient selection. Then, we cover mixing techniques. Finally, we explain baking temperature and timing. Each step is crucial for cookie perfection.",
         "image_url": "https://picsum.photos/seed/cookies/800/400"
     }
 ]
@@ -185,12 +185,12 @@ class PublishLog:
         return sum(1 for l in FileStore.read_lines(self.path) if today in l and "STATUS:published" in l)
 
 # ============================================================
-# 🎨 HTML ARTICLE BUILDER — Full SEO + i18n
+# 🎨 HTML ARTICLE BUILDER — Full SEO + i18n with IMAGES & PARAGRAPHS
 # ============================================================
 
 class ArticleBuilder:
     """
-    Builds a complete, SEO-optimised HTML email.
+    Builds a complete, SEO-optimised HTML email with images and formatted paragraphs.
     Uses the 'body' field from the cooking articles file.
     """
 
@@ -199,8 +199,8 @@ class ArticleBuilder:
         self.meta     = lang_meta
         self.title    = article["title"]
         self.keyword  = article.get("keyword", "")
-        # تغيير: استخدام حقل body بدلاً من html
-        self.html_content = article.get("body", "")
+        # استخدام حقل body بدلاً من html
+        self.body_content = article.get("body", "")
         self.img      = article.get("image_url", "")
         self.links    = article.get("internal_links", [])
         self.dir      = lang_meta["dir"]
@@ -212,53 +212,261 @@ class ArticleBuilder:
         raw = f"{article['id']}:{article['title']}:{article.get('keyword', '')}"
         return hashlib.md5(raw.encode()).hexdigest()[:12]
 
+    # ── Responsive Image with Rounded Corners ──
+    def _image_html(self) -> str:
+        """توليد كود الصورة المتجاوبة مع الزوايا الناعمة"""
+        if not self.img:
+            return ""
+        
+        return f'''
+        <div style="text-align:center; margin: 25px 0 30px 0;">
+            <img src="{self.img}" 
+                 alt="{self.title}"
+                 style="max-width:100%; 
+                        height:auto; 
+                        border-radius:12px; 
+                        box-shadow:0 6px 20px rgba(0,0,0,0.15);
+                        border: 1px solid #f0f0f0;
+                        transition: transform 0.3s ease;" 
+                 onmouseover="this.style.transform='scale(1.01)'"
+                 onmouseout="this.style.transform='scale(1)'">
+            <p style="color:#888; font-size:13px; margin-top:8px; font-style:italic;">
+                📸 {self.keyword} - Recipe Image
+            </p>
+        </div>'''
+
+    # ── Format Body into Paragraphs ──
+    def _formatted_body(self) -> str:
+        """تحويل النص الكتلة إلى فقرات منظمة"""
+        if not self.body_content:
+            return '<p style="color:#666; font-style:italic;">No content available for this article.</p>'
+        
+        # تنظيف النص الأساسي
+        body = self.body_content.strip()
+        
+        # استبدال علامات الترقيم المتعددة بعلامات واحدة
+        body = body.replace('..', '.').replace('!!', '!').replace('??', '?')
+        
+        # تقسيم الجمل بناءً على علامات الترقيم الرئيسية
+        sentences = []
+        temp = ''
+        
+        for char in body:
+            temp += char
+            if char in '.!?':
+                sentences.append(temp.strip())
+                temp = ''
+        
+        # إضافة الجملة الأخيرة إذا كانت موجودة
+        if temp.strip():
+            sentences.append(temp.strip())
+        
+        # تجميع 2-3 جمل في كل فقرة
+        paragraphs = []
+        current_paragraph = []
+        
+        for i, sentence in enumerate(sentences):
+            current_paragraph.append(sentence)
+            
+            # إنهاء الفقرة كل 2-3 جمل أو عند انتهاء الجمل
+            if len(current_paragraph) >= 3 or i == len(sentences) - 1:
+                paragraph_text = ' '.join(current_paragraph)
+                paragraphs.append(f'''
+                <p style="line-height:1.8; 
+                         font-size:16px; 
+                         color:#333; 
+                         margin-bottom:20px;
+                         text-align:justify;">
+                    {paragraph_text}
+                </p>''')
+                current_paragraph = []
+        
+        return '\n'.join(paragraphs)
+
+    # ── H1 Title ──
+    def _h1(self) -> str:
+        align = "center" if self.dir == "rtl" else "left"
+        return f'''
+        <h1 style="color:#1a1a2e;
+                   text-align:{align};
+                   line-height:1.4;
+                   margin: 20px 0 15px 0;
+                   font-size:32px;
+                   border-bottom: 3px solid #e94560;
+                   padding-bottom: 12px;">
+            {self.title}
+        </h1>'''
+
+    # ── Introduction Section ──
+    def _introduction(self) -> str:
+        """إنشاء مقدمة المقال مع الكلمة المفتاحية"""
+        intro_text = f"In this comprehensive guide, we will explore {self.keyword.lower()}. "
+        intro_text += "This article provides detailed instructions, tips, and techniques to help you master this recipe."
+        
+        return f'''
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin: 25px 0;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h2 style="margin-top:0; color:white;">✨ Introduction</h2>
+            <p style="font-size:17px; line-height:1.7;">
+                {intro_text}
+            </p>
+        </div>'''
+
+    # ── Conclusion Section ──
+    def _conclusion(self) -> str:
+        """إنشاء قسم الخاتمة"""
+        conclusion_text = f"Mastering {self.keyword} takes practice and patience. "
+        conclusion_text += "Remember to always use fresh ingredients and follow the steps carefully. "
+        conclusion_text += "With time, you'll develop your own signature style!"
+        
+        return f'''
+        <div style="background: #f8f9fa;
+                    border-left: 4px solid #28a745;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin: 30px 0;
+                    box-shadow: 0 3px 10px rgba(0,0,0,0.05);">
+            <h3 style="color:#28a745; margin-top:0;">✅ Key Takeaways</h3>
+            <p style="font-size:16px; line-height:1.7; color:#444;">
+                {conclusion_text}
+            </p>
+        </div>'''
+
     # ── MASTER BUILD ──
     def build(self) -> tuple[str, str]:
         """Returns (subject, full_html)"""
-        ts   = datetime.now().strftime("%d/%m/%Y")
+        ts   = datetime.now().strftime("%d %B %Y")
         pfx  = self.meta["tag_prefix"]
         pub  = self.meta["published_label"]
 
-        # استخدم HTML الموجود في الملف مباشرة
-        article_content = self.html_content if self.html_content else "<p>No content available.</p>"
+        # بناء المحتوى خطوة بخطوة
+        image_html = self._image_html()
+        h1_html = self._h1()
+        intro_html = self._introduction()
+        body_html = self._formatted_body()
+        conclusion_html = self._conclusion()
         
         html = f"""<!DOCTYPE html>
 <html lang="{self.lang}" dir="{self.dir}">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>{self.title}</title>
-<style>
-  body {{
-    font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;
-    background:#f4f6f8;color:#333;direction:{self.dir};padding:16px;margin:0;
-  }}
-  .wrap {{
-    max-width:780px;margin:0 auto;background:#fff;border-radius:14px;
-    padding:32px 28px;box-shadow:0 3px 16px rgba(0,0,0,0.07);
-  }}
-  .tag {{
-    display:inline-block;background:#e94560;color:#fff;
-    padding:5px 14px;border-radius:20px;font-size:13px;margin-bottom:18px;
-  }}
-  .footer {{
-    text-align:center;color:#999;font-size:12px;
-    margin-top:28px;border-top:1px solid #eee;padding-top:14px;
-  }}
-  h1,h2,h3 {{margin-top:0;}}
-  @media(max-width:600px){{
-    .wrap{{padding:18px 14px;border-radius:0;}}
-  }}
-</style>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+    <title>{self.title} | Cooking Recipe</title>
+    <meta name="description" content="Learn how to make {self.keyword.lower()} with this detailed step-by-step guide. Professional cooking tips and techniques." />
+    <meta name="keywords" content="{self.keyword}, recipe, cooking, food, tutorial" />
+    <style>
+        body {{
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #333;
+            direction: {self.dir};
+            padding: 20px;
+            margin: 0;
+            line-height: 1.6;
+        }}
+        .wrap {{
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+        }}
+        .wrap::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1);
+        }}
+        .tag {{
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }}
+        .footer {{
+            text-align: center;
+            color: #777;
+            font-size: 13px;
+            margin-top: 40px;
+            border-top: 2px dashed #eee;
+            padding-top: 20px;
+        }}
+        h1, h2, h3 {{
+            margin-top: 0;
+            font-weight: 700;
+        }}
+        @media (max-width: 600px) {{
+            .wrap {{
+                padding: 25px 20px;
+                border-radius: 0;
+                margin: 0;
+            }}
+            h1 {{
+                font-size: 26px;
+            }}
+        }}
+        .content-block {{
+            animation: fadeIn 0.8s ease-out;
+        }}
+        @keyframes fadeIn {{
+            from {{ opacity: 0; transform: translateY(20px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+    </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="tag">{pfx} {self.keyword}</div>
-  {article_content}
-  <div class="footer">
-    <p>{pub}: {ts} &nbsp;|&nbsp; {self.keyword} &nbsp;|&nbsp; Hash: {self.content_hash(self.a)}</p>
-  </div>
-</div>
+    <div class="wrap">
+        <div class="tag">{pfx} {self.keyword}</div>
+        
+        {image_html}
+        
+        <div class="content-block">
+            {h1_html}
+            {intro_html}
+            {body_html}
+            {conclusion_html}
+        </div>
+        
+        <div class="footer">
+            <p>{pub}: <strong>{ts}</strong> &nbsp;|&nbsp; 
+               <span style="color:#667eea;">{self.keyword}</span> &nbsp;|&nbsp; 
+               Article ID: {self.content_hash(self.a)}</p>
+            <p style="font-size:12px; color:#aaa; margin-top:10px;">
+                This recipe was automatically generated with care ❤️
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // تأثيرات تفاعلية بسيطة
+        document.addEventListener('DOMContentLoaded', function() {{
+            const paragraphs = document.querySelectorAll('p');
+            paragraphs.forEach(p => {{
+                p.addEventListener('mouseover', function() {{
+                    this.style.backgroundColor = '#f8f9fa';
+                    this.style.transition = 'background-color 0.3s ease';
+                }});
+                p.addEventListener('mouseout', function() {{
+                    this.style.backgroundColor = 'transparent';
+                }});
+            }});
+        }});
+    </script>
 </body>
 </html>"""
         return self.title, html
