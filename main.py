@@ -106,14 +106,14 @@ SEED_ARTICLES = [
         "id": 1,
         "title": "Delicious Homemade Pizza Recipe",
         "keyword": "Pizza Recipe",
-        "html": "<h1>Delicious Homemade Pizza Recipe</h1><p>Learn how to make amazing homemade pizza with this easy recipe...</p>",
+        "body": "<h1>Delicious Homemade Pizza Recipe</h1><p>Learn how to make amazing homemade pizza with this easy recipe...</p>",
         "image_url": "https://picsum.photos/seed/pizza/800/400"
     },
     {
         "id": 2,
         "title": "Perfect Chocolate Chip Cookies",
         "keyword": "Cookie Recipe",
-        "html": "<h1>Perfect Chocolate Chip Cookies</h1><p>The ultimate guide to baking soft and chewy chocolate chip cookies...</p>",
+        "body": "<h1>Perfect Chocolate Chip Cookies</h1><p>The ultimate guide to baking soft and chewy chocolate chip cookies...</p>",
         "image_url": "https://picsum.photos/seed/cookies/800/400"
     }
 ]
@@ -191,7 +191,7 @@ class PublishLog:
 class ArticleBuilder:
     """
     Builds a complete, SEO-optimised HTML email.
-    Uses the 'html' field from the cooking articles file.
+    Uses the 'body' field from the cooking articles file.
     """
 
     def __init__(self, article: dict, lang_meta: dict):
@@ -199,8 +199,8 @@ class ArticleBuilder:
         self.meta     = lang_meta
         self.title    = article["title"]
         self.keyword  = article.get("keyword", "")
-        # استخدام حقل html بدلاً من body
-        self.html_content = article.get("html", "")
+        # تغيير: استخدام حقل body بدلاً من html
+        self.html_content = article.get("body", "")
         self.img      = article.get("image_url", "")
         self.links    = article.get("internal_links", [])
         self.dir      = lang_meta["dir"]
@@ -479,8 +479,8 @@ def add_article(lang):
     if lang not in LANG_META:
         return jsonify({"error": f"Unknown language. Choose: {list(LANG_META.keys())}"}), 400
     body = request.get_json(silent=True)
-    if not body or not all(k in body for k in ("title", "html")):
-        return jsonify({"error": "Missing required fields: title, html"}), 400
+    if not body or not all(k in body for k in ("title", "body")):
+        return jsonify({"error": "Missing required fields: title, body"}), 400
 
     path     = LANG_META[lang]["articles_file"]
     articles = FileStore.read_json(path) if Path(path).exists() else []
@@ -489,7 +489,7 @@ def add_article(lang):
         "id":             new_id,
         "title":          body["title"],
         "keyword":        body.get("keyword", ""),
-        "html":           body["html"],  # استخدام حقل html
+        "body":           body["body"],  # استخدام حقل body
         "image_url":      body.get("image_url", ""),
         "internal_links": body.get("internal_links", []),
     }
