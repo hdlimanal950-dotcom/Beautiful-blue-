@@ -52,21 +52,22 @@ class Config:
     All secrets pulled from environment variables.
     Fallback to .env or hardcoded defaults for local dev.
     """
-    # Pipedream webhook endpoint (الجسر)
-    PIPEDREAM_WEBHOOK: str = os.getenv("PIPEDREAM_WEBHOOK", "https://eo4qdz87j26q8wo.m.pipedream.net")
+    # Pipedream webhook endpoint (الجسر) - رابط جديد
+    PIPEDREAM_WEBHOOK: str = os.getenv("PIPEDREAM_WEBHOOK", "https://eo7yfk2notppj48.m.pipedream.net")
     
     # --- Quota & Timing ---
     QUOTA_MIN:      int = int(os.getenv("QUOTA_MIN",  "10"))
     QUOTA_MAX:      int = int(os.getenv("QUOTA_MAX",  "15"))
-    INTERVAL_MIN:   int = int(os.getenv("INTERVAL_MIN","60"))   # minutes
-    INTERVAL_MAX:   int = int(os.getenv("INTERVAL_MAX","90"))   # minutes
+    # زيادة مدة النشر إلى 3 ساعات (180 دقيقة) مع تباين بسيط
+    INTERVAL_MIN:   int = int(os.getenv("INTERVAL_MIN","170"))   # دقائق (حوالي 2.83 ساعة)
+    INTERVAL_MAX:   int = int(os.getenv("INTERVAL_MAX","190"))   # دقائق (حوالي 3.17 ساعة)
 
     # --- HTTP Retry ---
     HTTP_RETRIES:   int = int(os.getenv("HTTP_RETRIES","3"))
     HTTP_RETRY_WAIT:int = int(os.getenv("HTTP_RETRY_WAIT","5")) # seconds
 
     # --- File Paths ---
-    # تغيير: استخدام cooking_articles_600.json مباشرة في المجلد الرئيسي
+    # استخدام cooking_articles_600.json مباشرة في المجلد الرئيسي
     ARTICLES_EN:    str = str(ROOT_DIR / "cooking_articles_600.json")
     LOG_EN:         str = str(DATA_DIR / "log_en.txt")
 
@@ -198,7 +199,7 @@ class ArticleBuilder:
         self.meta     = lang_meta
         self.title    = article["title"]
         self.keyword  = article.get("keyword", "")
-        # تغيير مهم: استخدام حقل html بدلاً من body
+        # استخدام حقل html بدلاً من body
         self.html_content = article.get("html", "")
         self.img      = article.get("image_url", "")
         self.links    = article.get("internal_links", [])
@@ -370,7 +371,9 @@ class LanguageWorker:
     # ── Random wait in [INTERVAL_MIN, INTERVAL_MAX] minutes ──
     def _wait(self):
         secs = random.randint(cfg.INTERVAL_MIN, cfg.INTERVAL_MAX) * 60
-        logger.info("[%s] ⏳ Next publish in %d min …", self.lang.upper(), secs // 60)
+        hours = secs / 3600
+        logger.info("[%s] ⏳ Next publish in %.1f hours (%d minutes) …", 
+                   self.lang.upper(), hours, secs // 60)
         time.sleep(secs)
 
     # ── Main loop ──
@@ -531,6 +534,9 @@ def start_workers():
     logger.info(" Language: %s", ", ".join(LANG_META.keys()))
     logger.info(" Articles file: %s", cfg.ARTICLES_EN)
     logger.info(" Webhook URL: %s", cfg.PIPEDREAM_WEBHOOK)
+    logger.info(" Publish interval: %d-%d minutes (%.1f-%.1f hours)", 
+               cfg.INTERVAL_MIN, cfg.INTERVAL_MAX, 
+               cfg.INTERVAL_MIN/60, cfg.INTERVAL_MAX/60)
     logger.info("=" * 60)
 
     sender = WebhookSender()
