@@ -12,12 +12,11 @@ import json
 import time
 import random
 import logging
-import smtplib
 import threading
 import hashlib
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 from flask import Flask, jsonify, request
 from functools import wraps
@@ -53,21 +52,18 @@ class Config:
     All secrets pulled from environment variables.
     Fallback to .env or hardcoded defaults for local dev.
     """
-    SENDER_EMAIL:   str = os.getenv("SENDER_EMAIL",   "YOUR_GMAIL@gmail.com")
-    SENDER_PASS:    str = os.getenv("SENDER_PASS",    "YOUR_APP_PASSWORD")
-    SMTP_HOST:      str = os.getenv("SMTP_HOST",      "smtp.gmail.com")
-    SMTP_PORT:      int = int(os.getenv("SMTP_PORT",  "465"))  # تغيير من 587 إلى 465
-    BLOGGER_EMAIL:  str = os.getenv("BLOGGER_EMAIL",  "qttqtt994.mounir06@blogger.com")
-
+    # Pipedream webhook endpoint (الجسر)
+    PIPEDREAM_WEBHOOK: str = os.getenv("PIPEDREAM_WEBHOOK", "https://eo4qdz87j26q8wo.m.pipedream.net")
+    
     # --- Quota & Timing ---
     QUOTA_MIN:      int = int(os.getenv("QUOTA_MIN",  "10"))
     QUOTA_MAX:      int = int(os.getenv("QUOTA_MAX",  "15"))
     INTERVAL_MIN:   int = int(os.getenv("INTERVAL_MIN","60"))   # minutes
     INTERVAL_MAX:   int = int(os.getenv("INTERVAL_MAX","90"))   # minutes
 
-    # --- SMTP Retry ---
-    SMTP_RETRIES:   int = int(os.getenv("SMTP_RETRIES","3"))
-    SMTP_RETRY_WAIT:int = int(os.getenv("SMTP_RETRY_WAIT","5")) # seconds
+    # --- HTTP Retry ---
+    HTTP_RETRIES:   int = int(os.getenv("HTTP_RETRIES","3"))
+    HTTP_RETRY_WAIT:int = int(os.getenv("HTTP_RETRY_WAIT","5")) # seconds
 
     # --- File Paths ---
     ARTICLES_AR:    str = str(DATA_DIR / "articles_ar.json")
@@ -207,7 +203,7 @@ SEED_ARTICLES = {
             "id": 3,
             "title": "Guide Complet de la Programmation Python",
             "keyword": "Programmation Python",
-            "body": "La programmation Python est largement considérée comme l'une des langues les plus accessibles et puissantes à apprendre. Créé dans les années 1990 Python a connu une explosion de popularity au cours de la dernière décennie dans tous les secteurs. La syntaxe propre et lisible de Python la rend parfaite comme première langage pour les débutants qui souhaitent se lancer. Python est utilisé massivement en intelligence artificielle apprentissage automatique science des données et développement web. Commencer est simple — téléchargez l'interpréteur officiel depuis python.org et commencez à expérimenter immédiatement. L'écosystème Python contient des milliers de bibliothèques gratuites qui étendent ses capacités dans presque tous les domaines. Commencer par des projets petits puis progressivement augmenter la complexité est la stratégie d'apprentissage la plus efficace. La communauté Python est exceptionnellement accueillante et vous trouverez un soutien complet et des ressources partout en ligne.",
+            "body": "La programmation Python est largement considérée comme l'une des langues les plus accessibles et puissantes à apprendre. Créé dans les années 1990 Python a connu une explosion de popularité au cours de la dernière décennie dans tous les secteurs. La syntaxe propre et lisible de Python la rend parfaite comme première langage pour les débutants qui souhaitent se lancer. Python est utilisé massivement en intelligence artificielle apprentissage automatique science des données et développement web. Commencer est simple — téléchargez l'interpréteur officiel depuis python.org et commencez à expérimenter immédiatement. L'écosystème Python contient des milliers de bibliothèques gratuites qui étendent ses capacités dans presque tous les domaines. Commencer par des projets petits puis progressivement augmenter la complexité est la stratégie d'apprentissage la plus efficace. La communauté Python est exceptionnellement accueillante et vous trouverez un soutien complet et des ressources partout en ligne.",
             "image_url": "https://picsum.photos/seed/fr3/800/400",
             "internal_links": ["https://yoursite.com/python-debut", "https://yoursite.com/frameworks-web"]
         },
@@ -434,61 +430,81 @@ class ArticleBuilder:
         return self.title, html
 
 # ============================================================
-# 📧 SMTP SENDER — Retry + SSL + connection reuse
+# 🌉 HTTP WEBHOOK SENDER — Retry + connection reuse
 # ============================================================
 
-class SMTPSender:
+class WebhookSender:
     """
-    Sends one email with automatic retry on transient failures.
-    Uses SSL (port 465) instead of TLS (port 587).
+    Sends article data to Pipedream webhook via HTTP POST.
+    Uses retry logic for transient failures.
     """
     def __init__(self):
-        self._conn: smtplib.SMTP_SSL | None = None
-
-    # ── Connect (or reconnect) ──
-    def _connect(self):
-        logger.info("[SMTP] Connecting via SSL %s:%d …", cfg.SMTP_HOST, cfg.SMTP_PORT)
-        # استخدام SMTP_SSL بدلاً من SMTP للاتصال الآمن منذ البداية
-        self._conn = smtplib.SMTP_SSL(cfg.SMTP_HOST, cfg.SMTP_PORT, timeout=30)
-        self._conn.ehlo()
-        # لا نحتاج إلى starttls() لأن الاتصال مشفر بالفعل مع SMTP_SSL
-        self._conn.login(cfg.SENDER_EMAIL, cfg.SENDER_PASS)
-        logger.info("[SMTP] ✅ SSL authenticated.")
-
-    # ── Close gracefully ──
-    def close(self):
-        if self._conn:
-            try:  self._conn.quit()
-            except: pass
-            self._conn = None
+        self.webhook_url = cfg.PIPEDREAM_WEBHOOK
 
     # ── Send with retry loop ──
     def send(self, subject: str, html: str) -> bool:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = cfg.SENDER_EMAIL
-        msg["To"]      = cfg.BLOGGER_EMAIL
-        msg.attach(MIMEText(html, "html", "utf-8"))
-
-        for attempt in range(1, cfg.SMTP_RETRIES + 1):
+        """
+        Send article to Pipedream webhook.
+        Returns True if successful, False otherwise.
+        """
+        # تحضير البيانات للإرسال
+        payload = {
+            "subject": subject,
+            "html": html,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "smart-publishing-engine"
+        }
+        
+        # تحويل البيانات إلى JSON
+        data = json.dumps(payload).encode('utf-8')
+        
+        for attempt in range(1, cfg.HTTP_RETRIES + 1):
             try:
-                if not self._conn:
-                    self._connect()
-                self._conn.sendmail(cfg.SENDER_EMAIL, cfg.BLOGGER_EMAIL, msg.as_string())
-                logger.info("[SMTP] ✅ Sent: %s  (attempt %d)", subject, attempt)
-                return True
-            except (smtplib.SMTPServerDisconnected, ConnectionError, OSError) as e:
-                logger.warning("[SMTP] ⚠️  Connection lost: %s — reconnecting (attempt %d/%d)", e, attempt, cfg.SMTP_RETRIES)
-                self.close()
-                time.sleep(cfg.SMTP_RETRY_WAIT * attempt)  # exponential-ish back-off
-            except smtplib.SMTPAuthenticationError:
-                logger.error("[SMTP] ❌ Auth failed — check SENDER_EMAIL / SENDER_PASS env vars.")
-                return False
+                # إنشاء طلب HTTP
+                req = urllib.request.Request(
+                    self.webhook_url,
+                    data=data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'SmartPublishingEngine/1.0'
+                    },
+                    method='POST'
+                )
+                
+                # إرسال الطلب
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    status = response.getcode()
+                    if 200 <= status < 300:
+                        logger.info("[WEBHOOK] ✅ Sent: %s (attempt %d, status %d)", 
+                                   subject, attempt, status)
+                        return True
+                    else:
+                        logger.warning("[WEBHOOK] ⚠️  HTTP %d for: %s (attempt %d/%d)", 
+                                      status, subject, attempt, cfg.HTTP_RETRIES)
+                        
+            except urllib.error.HTTPError as e:
+                logger.warning("[WEBHOOK] ⚠️  HTTP Error %d: %s (attempt %d/%d)", 
+                              e.code, e.reason, attempt, cfg.HTTP_RETRIES)
+            except urllib.error.URLError as e:
+                logger.warning("[WEBHOOK] ⚠️  URL Error: %s (attempt %d/%d)", 
+                              e.reason, attempt, cfg.HTTP_RETRIES)
+            except ConnectionError as e:
+                logger.warning("[WEBHOOK] ⚠️  Connection Error: %s (attempt %d/%d)", 
+                              str(e), attempt, cfg.HTTP_RETRIES)
+            except TimeoutError as e:
+                logger.warning("[WEBHOOK] ⚠️  Timeout Error (attempt %d/%d)", 
+                              attempt, cfg.HTTP_RETRIES)
             except Exception as e:
-                logger.error("[SMTP] ❌ Unexpected: %s", e)
-                self.close()
-                time.sleep(cfg.SMTP_RETRY_WAIT)
-        logger.error("[SMTP] ❌ All %d retries exhausted for: %s", cfg.SMTP_RETRIES, subject)
+                logger.error("[WEBHOOK] ❌ Unexpected: %s (attempt %d/%d)", 
+                           str(e), attempt, cfg.HTTP_RETRIES)
+            
+            # انتظار قبل إعادة المحاولة
+            if attempt < cfg.HTTP_RETRIES:
+                wait_time = cfg.HTTP_RETRY_WAIT * attempt
+                time.sleep(wait_time)
+        
+        logger.error("[WEBHOOK] ❌ All %d retries exhausted for: %s", 
+                    cfg.HTTP_RETRIES, subject)
         return False
 
 # ============================================================
@@ -500,7 +516,7 @@ class LanguageWorker:
     Manages the full publish lifecycle for ONE language.
     Runs in its own daemon thread so languages are independent.
     """
-    def __init__(self, lang_code: str, sender: SMTPSender):
+    def __init__(self, lang_code: str, sender: WebhookSender):
         self.lang     = lang_code
         self.meta     = LANG_META[lang_code]
         self.sender   = sender
@@ -582,8 +598,8 @@ class KeepAliveThread(threading.Thread):
 
 app = Flask(__name__)
 
-# -- shared SMTP sender (thread-safe via per-call reconnect) --
-_sender = SMTPSender()
+# -- shared webhook sender --
+_sender = WebhookSender()
 
 # -- global status registry (in-memory) --
 _status: dict = {}   # { "ar": { "quota": int, "published_today": int, "pending": int }, … }
@@ -680,9 +696,10 @@ def start_workers():
     logger.info("=" * 60)
     logger.info(" SMART PUBLISHING ENGINE — STARTING")
     logger.info(" Languages: %s", ", ".join(LANG_META.keys()))
+    logger.info(" Webhook URL: %s", cfg.PIPEDREAM_WEBHOOK)
     logger.info("=" * 60)
 
-    sender = SMTPSender()
+    sender = WebhookSender()
 
     for code in LANG_META:
         worker = LanguageWorker(code, sender)
